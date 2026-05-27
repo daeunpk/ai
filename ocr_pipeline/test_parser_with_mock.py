@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 from parser import parse_menu_candidates
+from result_builder import build_final_result
 
 
 def load_json(path: Path):
@@ -24,12 +25,7 @@ def run_mock_parser(input_path: str):
     lines = load_json(source_path)
     menus = parse_menu_candidates(lines)
 
-    result = {
-        "image": source_path.name,
-        "modelId": "mock",
-        "menus": menus,
-        "rawLines": lines,
-    }
+    result = build_final_result(source_path.name, menus)
 
     output_path = Path("outputs/final") / f"{source_path.stem}_result.json"
     save_json(result, output_path)

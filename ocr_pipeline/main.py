@@ -2,9 +2,11 @@ import argparse
 import json
 from pathlib import Path
 
-from ocr_client import DEFAULT_MODEL_ID, AzureOCRClient, OCRConfigError
 from parser import parse_menu_candidates
-from preprocess_image import preprocess_image
+from result_builder import build_final_result
+
+
+DEFAULT_MODEL_ID = "prebuilt-layout"
 
 
 def analyze_menu_image(
@@ -12,12 +14,17 @@ def analyze_menu_image(
     model_id: str = DEFAULT_MODEL_ID,
     fallback_read: bool = True,
     use_preprocess: bool = True,
+    source: str = "upload",
+    storage_key: str | None = None,
+    image_url: str | None = None,
 ):
     image = Path(image_path)
     if not image.exists() or not image.is_file():
         raise FileNotFoundError(f"이미지 파일을 찾을 수 없습니다: {image_path}")
 
     ocr_image_path = prepare_ocr_image(image_path, use_preprocess)
+
+    from ocr_client import AzureOCRClient
 
     client = AzureOCRClient()
     raw_lines, used_model_id = analyze_with_optional_fallback(
@@ -29,11 +36,15 @@ def analyze_menu_image(
     menus = parse_menu_candidates(raw_lines)
 
     return {
-        "image": Path(image_path).name,
-        "ocrImage": str(ocr_image_path),
         "modelId": used_model_id,
-        "menus": menus,
         "rawLines": raw_lines,
+        "final": build_final_result(
+            image_path,
+            menus,
+            source=source,
+            storage_key=storage_key,
+            image_url=image_url,
+        ),
     }
 
 
@@ -43,6 +54,8 @@ def prepare_ocr_image(image_path: str, use_preprocess: bool):
 
     source = Path(image_path)
     output_path = Path("images/preprocessed") / f"{source.stem}_preprocessed{source.suffix}"
+    from preprocess_image import preprocess_image
+
     processed_path = preprocess_image(
         input_path=image_path,
         output_path=str(output_path),
@@ -104,6 +117,25 @@ def parse_args():
         action="store_true",
         help="로컬 이미지 전처리를 하지 않고 원본 이미지를 Azure OCR에 전달",
     )
+    parser.add_argument(
+        "--source",
+        choices=("camera", "upload"),
+        default="upload",
+        help="이미지 입력 출처. 백엔드 menu_images.source 저장값",
+    )
+    parser.add_argument(
+        "--storage-key",
+        help="백엔드 또는 외부 저장소에 저장된 이미지 키. menu_images.storage_key에 들어감",
+    )
+    parser.add_argument(
+        "--image-url",
+        help="백엔드 또는 외부 저장소 이미지 접근 URL. menu_images.image_url에 들어감",
+    )
+    parser.add_argument(
+        "--print-json",
+        action="store_true",
+        help="최종 JSON을 stdout에도 출력함. 백엔드 연동 테스트용",
+    )
     return parser.parse_args()
 
 
@@ -116,18 +148,23 @@ def main():
             args.model,
             fallback_read=not args.no_fallback_read,
             use_preprocess=not args.no_preprocess,
+            source=args.source,
+            storage_key=args.storage_key,
+            image_url=args.image_url,
         )
         raw_path, final_path = build_output_paths(args.image, result["modelId"])
 
         save_json(result["rawLines"], raw_path)
-        save_json(result, final_path)
+        save_json(result["final"], final_path)
 
         print(f"OCR raw line 저장 완료: {raw_path}")
         print(f"최종 JSON 저장 완료: {final_path}")
-        print(f"메뉴 후보 {len(result['menus'])}개 추출")
+        print(f"메뉴 후보 {result['final']['scan_session']['menu_count']}개 추출")
+        if args.print_json:
+            print(json.dumps(result["final"], ensure_ascii=False, indent=2))
     except FileNotFoundError as error:
         print(f"[파일 오류] {error}")
-    except OCRConfigError as error:
+    except RuntimeError as error:
         print(f"[환경 설정 오류] {error}")
         print(".env.example을 참고해서 .env 파일을 작성해주세요.")
     except Exception as error:

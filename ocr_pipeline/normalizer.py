@@ -85,6 +85,7 @@ def remove_price(text: str):
 
 def normalize_menu_name(text: str):
     text = normalize_name_text(text)
+    text = clean_menu_name_artifacts(text)
     text = re.sub(r"\s+", "", text)
 
     replacements = {
@@ -107,6 +108,7 @@ def match_known_menu_name(text: str):
         return None
 
     candidate = normalize_name_text(text)
+    candidate = clean_menu_name_artifacts(candidate)
     candidate = re.sub(r"\s+", "", candidate)
     candidate = candidate.replace("찌게", "찌개")
 
@@ -132,9 +134,29 @@ def normalize_name_text(text: str):
         return ""
 
     text = text.strip()
-    text = re.sub(r"[·•▶▷_\-\|\[\]\(\):]+", " ", text)
+    text = re.sub(r"[·•▶▷■□◆◇★☆▪▫_\-\u2010-\u2015\|\[\]\(\):]+", " ", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
+
+
+def clean_menu_name_artifacts(text: str):
+    if not text:
+        return ""
+
+    cleaned = normalize_name_text(text)
+    cleaned = remove_serving_amount(cleaned)
+    cleaned = re.sub(r"^[^가-힣A-Za-z0-9]+", "", cleaned)
+    cleaned = re.sub(r"[^가-힣A-Za-z0-9\s]+$", "", cleaned)
+    cleaned = re.sub(r"[^\w\s가-힣]+", " ", cleaned)
+    cleaned = re.sub(r"\b[a-zA-Z]\b", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip()
+
+
+def remove_serving_amount(text: str):
+    text = re.sub(r"\s*\d+(?:\.\d+)?\s*(?:kg|g|그램|인분)(?=$|[^A-Za-z가-힣])", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*\d+\s*(?:인|人)\b", " ", text)
+    return text
 
 
 def looks_like_menu_name(text: str):
