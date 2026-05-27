@@ -4,17 +4,25 @@ from pathlib import Path
 
 from ocr_client import DEFAULT_MODEL_ID, AzureOCRClient, OCRConfigError
 from parser import parse_menu_candidates
+from preprocess_image import preprocess_image
 
 
-def analyze_menu_image(image_path: str, model_id: str = DEFAULT_MODEL_ID, fallback_read: bool = True):
+def analyze_menu_image(
+    image_path: str,
+    model_id: str = DEFAULT_MODEL_ID,
+    fallback_read: bool = True,
+    use_preprocess: bool = True,
+):
     image = Path(image_path)
     if not image.exists() or not image.is_file():
         raise FileNotFoundError(f"이미지 파일을 찾을 수 없습니다: {image_path}")
 
+    ocr_image_path = prepare_ocr_image(image_path, use_preprocess)
+
     client = AzureOCRClient()
     raw_lines, used_model_id = analyze_with_optional_fallback(
         client=client,
-        image_path=image_path,
+        image_path=str(ocr_image_path),
         model_id=model_id,
         fallback_read=fallback_read,
     )
@@ -22,10 +30,30 @@ def analyze_menu_image(image_path: str, model_id: str = DEFAULT_MODEL_ID, fallba
 
     return {
         "image": Path(image_path).name,
+        "ocrImage": str(ocr_image_path),
         "modelId": used_model_id,
         "menus": menus,
         "rawLines": raw_lines,
     }
+
+
+def prepare_ocr_image(image_path: str, use_preprocess: bool):
+    if not use_preprocess:
+        return Path(image_path)
+
+    source = Path(image_path)
+    output_path = Path("images/preprocessed") / f"{source.stem}_preprocessed{source.suffix}"
+    processed_path = preprocess_image(
+        input_path=image_path,
+        output_path=str(output_path),
+        crop=None,
+        scale=2.0,
+        grayscale=True,
+        contrast=1.4,
+        sharpness=1.6,
+    )
+    print(f"전처리 이미지 사용: {processed_path}")
+    return processed_path
 
 
 def analyze_with_optional_fallback(client, image_path: str, model_id: str, fallback_read: bool):
@@ -71,6 +99,11 @@ def parse_args():
         action="store_true",
         help="prebuilt-layout 실패 시 prebuilt-read 재시도를 하지 않음",
     )
+    parser.add_argument(
+        "--no-preprocess",
+        action="store_true",
+        help="로컬 이미지 전처리를 하지 않고 원본 이미지를 Azure OCR에 전달",
+    )
     return parser.parse_args()
 
 
@@ -82,6 +115,7 @@ def main():
             args.image,
             args.model,
             fallback_read=not args.no_fallback_read,
+            use_preprocess=not args.no_preprocess,
         )
         raw_path, final_path = build_output_paths(args.image, result["modelId"])
 

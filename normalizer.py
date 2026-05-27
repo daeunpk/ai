@@ -1,4 +1,7 @@
 import re
+from difflib import SequenceMatcher
+
+from menu_dictionary import MENU_NAMES, MENU_TO_CATEGORY
 
 
 PRICE_MIN = 1000
@@ -25,6 +28,53 @@ def normalize_price(text: str):
     return None
 
 
+def normalize_price_detail(text: str):
+    price = normalize_price(text)
+    raw = extract_price_raw(text)
+    warnings = []
+
+    if raw and price is None:
+        warnings.append("invalid_price_range")
+    if price is not None and price < 3000:
+        warnings.append("possible_missing_digit")
+
+    return {
+        "price": price,
+        "priceRaw": raw,
+        "priceCorrected": has_price_ocr_correction(raw),
+        "priceWarnings": warnings,
+    }
+
+
+def extract_price_raw(text: str):
+    if not text:
+        return None
+
+    match = re.search(r"[₩]?\s*(?:\d{1,2}|[OoO])\s*[,\.]?\s*[\dOoO]{3}\s*원?", text)
+    if match:
+        return match.group().strip()
+
+    return None
+
+
+def normalize_price_text(text: str):
+    if not text:
+        return ""
+
+    cleaned = text.replace("O", "0").replace("o", "0")
+    cleaned = cleaned.replace("₩", "").replace("원", "")
+    cleaned = cleaned.replace(",", "").replace(".", "")
+    cleaned = re.sub(r"\s+", "", cleaned)
+    return cleaned
+
+
+def has_price_ocr_correction(text: str | None):
+    if not text:
+        return False
+
+    return bool(re.search(r"[OoO₩원\.]", text))
+
+
 def remove_price(text: str):
     if not text:
         return ""
@@ -48,7 +98,33 @@ def normalize_menu_name(text: str):
     for wrong, correct in replacements.items():
         text = text.replace(wrong, correct)
 
-    return text
+    matched = match_known_menu_name(text)
+    return matched["name"] if matched else text
+
+
+def match_known_menu_name(text: str):
+    if not text:
+        return None
+
+    candidate = normalize_name_text(text)
+    candidate = re.sub(r"\s+", "", candidate)
+    candidate = candidate.replace("찌게", "찌개")
+
+    if candidate in MENU_TO_CATEGORY:
+        return {"name": candidate, "category": MENU_TO_CATEGORY[candidate], "score": 1.0}
+
+    best_name = None
+    best_score = 0.0
+    for menu_name in MENU_NAMES:
+        score = SequenceMatcher(None, candidate, menu_name).ratio()
+        if score > best_score:
+            best_name = menu_name
+            best_score = score
+
+    if best_name and best_score >= 0.86 and len(candidate) == len(best_name):
+        return {"name": best_name, "category": MENU_TO_CATEGORY[best_name], "score": round(best_score, 3)}
+
+    return None
 
 
 def normalize_name_text(text: str):
