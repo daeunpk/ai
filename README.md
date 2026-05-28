@@ -168,6 +168,16 @@ python3 ai_ocr/compare_models.py --image images/menu_001.jpg
     "mime_type": "image/jpeg",
     "file_size": 123456
   },
+  "scan_quality": {
+    "status": "usable",
+    "score": 100,
+    "raw_line_count": 12,
+    "price_match_count": 1,
+    "price_match_ratio": 1.0,
+    "image_width": 1280,
+    "image_height": 960,
+    "reasons": []
+  },
   "menu_analyses": [
     {
       "menu_name_ko": "수육국밥",
@@ -190,7 +200,16 @@ ERD 매핑:
 | --- | --- |
 | `scan_session` | `scan_sessions` |
 | `menu_image` | `menu_images` |
+| `scan_quality` | 재촬영/검수 판단용 OCR 품질 메타데이터 |
 | `menu_analyses[]` | `menu_analyses` |
+
+재촬영 판단 기준:
+
+- `scan_quality.status == "needs_retake"`: 재촬영 요청
+- `scan_quality.status == "low_confidence"`: 결과는 보여주되 사용자가 확인하도록 안내
+- `scan_quality.status == "usable"`: 정상 사용 가능
+
+초기 기준은 메뉴 후보 0개, OCR line 3개 미만, 낮은 해상도는 재촬영으로 보고, 메뉴 후보가 3개 미만이거나 가격 매칭 비율이 50% 미만이면 낮은 신뢰도로 표시합니다.
 
 후속 파트가 채우는 필드:
 

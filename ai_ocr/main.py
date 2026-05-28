@@ -53,6 +53,7 @@ def analyze_menu_image(
             source=source,
             storage_key=storage_key,
             image_url=image_url,
+            raw_lines=raw_lines,
         ),
     }
 
